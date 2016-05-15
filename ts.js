@@ -1,120 +1,45 @@
 import gulp from "gulp";
-import gulpIf from "gulp-if";
 import typings from "gulp-typings";
-import sourcemaps from "gulp-sourcemaps";
-import gulpTypescript from "gulp-typescript";
-import babel from "gulp-babel";
-import typescript from "typescript";
-import {parallel} from "./util";
-import * as tslint from "./tslint";
-import {buildBrowser} from "./ts-browserify";
+import {parallel} from "./util.js";
+import * as tslint from "./tslint.js";
+import {buildMain} from "./ts-main.js";
+import {buildBrowser} from "./ts-browser.js";
 
 export const lint = tslint;
 export let config = {
     main: {
         src: ["src/**/*.ts", "!src/test/**", "!src/public/js/**"],
-        dest: "lib/",
-        configPath: "tsconfig.json"
+        dest: "lib/"
     },
     browser: {
-        files: [{
-            src: "src/public/js/app.ts",
-            dest: "lib/public/js/"
-        }],
-        config: {
-            cache: true,
-            module: {
-                loaders: [{
-                    test: /\.ts(x?)$/,
-                    loader: "babel-loader?presets[]=es2015!ts-loader"
-                }]
-            },
-            resolve: { extensions: ["", ".ts", ".tsx", ".js"] },
-            ts: { typescript }
-        }
+        src: ["src/public/js/app.ts"],
+        dest: "lib/public/js/"
     }
 };
 
 gulp.task("ts:typings", () => {
-    return gulp.src("./typings.json")
+    return gulp.src("typings.json")
         .pipe(typings());
 });
+gulp.task("ts:watch", build(false, true));
+gulp.task("ts:debug", build(false, false));
+gulp.task("ts:release", build(true, false));
 
-gulp.task("ts:debug",
-    gulp.series(
+function build(release, watch) {
+    return gulp.series(
         "ts:typings",
         gulp.parallel(
             "tslint:tslint",
-            () => {
+            function ts_build() {
                 let tasks = [];
                 if (config.main != null) {
-                    tasks.push(buildMain(false));
+                    tasks.push(buildMain(config.main, release, watch));
                 }
                 if (config.browser != null) {
-                    tasks.push(buildBrowser(false, config.browser, createBrowserProject(false)));
+                    tasks.push(buildBrowser(config.browser, release, watch));
                 }
                 return parallel(tasks);
             }
         )
     )
-);
-
-gulp.task("ts:browser",
-    gulp.parallel(
-        "tslint:tslint",
-        () => buildBrowser(false)
-    ));
-
-gulp.task("ts:release",
-    gulp.series(
-        "ts:typings",
-        gulp.parallel(
-            "tslint:tslint",
-            () => {
-                let tasks = [];
-                if (config.main != null) {
-                    tasks.push(buildMain(true));
-                }
-                if (config.browser != null) {
-                    tasks.push(buildBrowser(true, config.browser, createBrowserProject(true)));
-                }
-                return parallel(tasks);
-            }
-        )
-    )
-);
-
-function buildMain(release) {
-    let babelOpts = {
-        presets: ["modern-node/5.5"],
-        sourceMaps: true
-    };
-    return gulp.src(config.main.src)
-        .pipe(gulpIf(!release, sourcemaps.init()))
-        .pipe(gulpTypescript(createMainProject(release)))
-        .pipe(babel(babelOpts))
-        .pipe(gulpIf(!release, sourcemaps.write()))
-        .pipe(gulp.dest(config.main.dest));
-}
-
-function createMainProject(release) {
-    try {
-        return gulpTypescript.createProject(
-            config.main.configPath,
-            {
-                sourceMap: true,
-                removeComments: release,
-                typescript
-            });
-    } catch (e) {
-        return {};
-    }
-}
-
-function createBrowserProject(release) {
-    try {
-        return require("../" + config.browser.configPath).compilerOptions;
-    } catch (e) {
-        return createMainProject(release).config.compilerOptions;
-    }
 }
